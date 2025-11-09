@@ -1,0 +1,11 @@
+efficientnet_pytorch
+torchvision
+Pillow
+numpy
+tqdm
+scikit-learn
+pandas
+torch
+matplotlib
+numpngw
+scikit-learn
