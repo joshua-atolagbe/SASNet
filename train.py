@@ -6,11 +6,11 @@ from sklearn.model_selection import StratifiedKFold
 import torch
 from torch.utils.data import DataLoader
 
-from model import UNetEfficientNet, UNetEfficientNet_Skip, UNetEfficientNet_Skip_ELA
-from engine import train_model
-from metrics import DiceBCELoss, WeakFocalLoss
-from utils import seed_everything
-from data import SaltDataset, image_transform, mask_transform
+from scripts.model import UNetEfficientNet, UNetEfficientNet_Skip, UNetEfficientNet_Skip_ELA
+from scripts.engine import train_model
+from scripts.metrics import DiceBCELoss, WeakFocalLoss
+from scripts.utils import seed_everything
+from scripts.data import SaltDataset, image_transform, mask_transform
 
 
 def parse_args():
