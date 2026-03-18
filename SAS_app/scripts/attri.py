@@ -2,164 +2,122 @@ import sys
 from warnings import filterwarnings
 filterwarnings('ignore')
 
-def attrComp(data, attri_type:str, kernel:tuple, noise:str):
-    
+
+def attrComp(data, attri_type: str, kernel: tuple, noise: str):
     '''
-    
-    This module helps to apply noise reduction algorithm on 2D seismic before computing seismic attributes
-    for creating seismic masks
+    Apply noise reduction on a 2D seismic image then compute a seismic
+    attribute for use in salt/horizon mask generation.
+
+    Parameters
+    ----------
+    data       : np.ndarray, shape (H, W, 1)
+    attri_type : str, attribute key (e.g. 'enve', 'domfreq', 'rms')
+    kernel     : tuple or None, operator kernel size
+    noise      : str, one of 'gaussian' | 'median' | 'convolution'
+
+    Returns
+    -------
+    ori_image : np.ndarray (H, W, 1)  — original input
+    noise_red : np.ndarray (H, W, 1)  — denoised image
+    attr      : np.ndarray (H, W, 1)  — computed attribute
     '''
+
     sys.path.append('./attributes')
-    
+
     from attributes.CompleTrace import ComplexAttributes
     from attributes.SignalProcess import SignalProcess
     from attributes.NoiseReduction import NoiseReduction
-    
+
+    # ── noise reduction ───────────────────────────────────────────────────────
+
+    def noise_reduction(darray, noise):
+        '''
+        Apply denoising directly via scipy so shape is always preserved.
+        NoiseReduction's dask ghost+trim path is a no-op on single-chunk
+        arrays, which balloons (1,H,W) → (3,H+2,W+2).
+        '''
+        import numpy as np
+        from scipy import ndimage as ndi
+        import dask.array as da
+
+        arr = darray.compute() if hasattr(darray, 'compute') else np.array(darray)
+
+        filters = {
+            'gaussian':   lambda a: ndi.gaussian_filter(a, sigma=(1, 1, 1)),
+            'median':     lambda a: ndi.median_filter(a,   size=(3, 3, 3)),
+            'convolution':lambda a: ndi.uniform_filter(a,  size=(3, 3, 3)),
+        }
+        result = filters.get(noise, lambda a: a.copy())(arr)
+        return da.from_array(result, chunks=result.shape)
+
+    # ── attribute dispatch ────────────────────────────────────────────────────
+
+    # Maps attri_type → (processor_class, method_name, extra_kwargs)
+    SIGNAL_ATTRS = {
+        'rms':    (SignalProcess, 'rms',                  {'kernel': (1, 1, 9)}),
+        'reflin': (SignalProcess, 'reflection_intensity', {}),
+        'fder':   (SignalProcess, 'first_derivative',     {'axis': -1}),
+        'sder':   (SignalProcess, 'second_derivative',    {'axis': -1}),
+        'timegain':(SignalProcess,'time_gain',            {}),
+        'gradmag':(SignalProcess, 'gradient_magnitude',   {'sigmas': (1, 1, 1)}),
+    }
+
+    COMPLEX_ATTRS = {
+        'enve':        (ComplexAttributes, 'envelope',                  {}),
+        'inphase':     (ComplexAttributes, 'instantaneous_phase',       {}),
+        'cosphase':    (ComplexAttributes, 'cosine_instantaneous_phase',{}),
+        'infreq':      (ComplexAttributes, 'instantaneous_frequency',   {}),
+        'inband':      (ComplexAttributes, 'instantaneous_bandwidth',   {}),
+        'domfreq':     (ComplexAttributes, 'dominant_frequency',        {'sample_rate': 4}),
+        'sweetness':   (ComplexAttributes, 'sweetness',                 {}),
+        'ampcontrast': (ComplexAttributes, 'relative_amplitude_change', {}),
+        'ampacc':      (ComplexAttributes, 'amplitude_acceleration',    {}),
+        'apolar':      (ComplexAttributes, 'apparent_polarity',         {}),
+        'resamp':      (ComplexAttributes, 'response_amplitude',        {}),
+        'resfreq':     (ComplexAttributes, 'response_frequency',        {'sample_rate': 4}),
+        'resphase':    (ComplexAttributes, 'response_phase',            {}),
+    }
+
+    ALL_ATTRS = {**SIGNAL_ATTRS, **COMPLEX_ATTRS}
+
+    if attri_type not in ALL_ATTRS:
+        raise ValueError(f"Unknown attribute type '{attri_type}'. "
+                         f"Valid options: {sorted(ALL_ATTRS)}")
+
     def makeDask(darray, kernel, attri_type, noise):
-
-        def noise_reduction(darray, noise):
-
-            #apply noise reduction algo
-            n = NoiseReduction()
-            narray, _ = NoiseReduction.create_array(n, darray, kernel=None, preview=None)
-            narray = narray.T.rechunk('auto')
-
-            if noise == 'gaussian':
-                nresult = NoiseReduction.gaussian(n, narray, preview=None)
-                nresult = nresult.T
-
-            if noise == 'median':
-                nresult = NoiseReduction.median(n, narray, preview=None)
-                nresult = nresult.T
-
-            if noise == 'convolution':
-                nresult = NoiseReduction.convolution(n, narray, preview=None)
-                nresult = nresult.T
-
-            return nresult
-        
-        #denoised seismic array
         narray = noise_reduction(darray, noise)
-        
-        #make dask array for attribute computation
-        if attri_type == 'rms' or attri_type == 'reflin' or attri_type == 'timegain' or attri_type == 'fder'\
-            or attri_type == 'sder' or attri_type == 'gradmag':
-            
-            x = SignalProcess()
-            darray, chunks_init = SignalProcess.create_array(x, narray, kernel, preview=None)
-            darray = darray.T
-                
-            return (x, darray, narray)
-        
-        if attri_type == 'sweetness' or attri_type == 'infreq' or attri_type == 'enve' or attri_type == 'inphase'\
-            or attri_type == 'cosphase' or attri_type == 'ampcontrast' or attri_type == 'ampacc' or \
-            attri_type == 'inband' or attri_type == 'domfreq' or attri_type == 'apolar' or attri_type == 'resamp'\
-            or attri_type == 'resfreq' or attri_type == 'resphase':
+        cls, _, _ = ALL_ATTRS[attri_type]
+        return cls(), narray, narray
 
-            x = ComplexAttributes()
-            darray, chunks_init = ComplexAttributes.create_array(x, narray, kernel, preview=None)
-            darray = darray.T
-            
-            return (x, darray, narray)
-    
     def compute(x, darray, attri_type):
-        
-        '''
-        Computes the seismic attribute
-        '''
+        _, method_name, kwargs = ALL_ATTRS[attri_type]
+        method = getattr(x, method_name)
+        return method(darray, preview=None, **kwargs)
 
-        if attri_type == 'reflin':
-            result = SignalProcess.reflection_intensity(x, darray, preview=None)
-            return result
+    # ── main pipeline ─────────────────────────────────────────────────────────
 
-        if attri_type == 'enve':
-            result = ComplexAttributes.envelope(x, darray, preview=None)
-            return result
-        
-        if attri_type == 'sweetness':
-            result = ComplexAttributes.sweetness(x, darray, preview=None)
-            return result
-        
-        if attri_type == 'infreq':
-            result = ComplexAttributes.instantaneous_frequency(x, darray, preview=None)
-            return result
-        
-        if attri_type == 'fder':
-            result = SignalProcess.first_derivative(x, darray, axis=-1, preview=None)
-            return result
-      
-        if attri_type == 'sder':
-            result = SignalProcess.second_derivative(x, darray, axis=-1, preview=None)
-            return result
-        
-        if attri_type == 'rms':
-            result = SignalProcess.rms(x, darray, kernel=(1, 1, 9), preview=None)
-            return result
+    import numpy as np
 
-        if attri_type == 'timegain':
-            result = SignalProcess.time_gain(x, darray, preview=None)
-            return result
-        
-        if attri_type == 'gradmag':
-            result = SignalProcess.gradient_magnitude(x, darray, sigmas=(1,1,1), preview=None)
-            return result
-        
-        if attri_type == 'inphase':
-            result = ComplexAttributes.instantaneous_phase(x, darray, preview=None)   
-            return result
-
-        if attri_type == 'cosphase':
-            result = ComplexAttributes.cosine_instantaneous_phase(x, darray, preview=None)   
-            return result
-
-        if attri_type == 'ampcontrast':
-            result = ComplexAttributes.relative_amplitude_change(x, darray, preview=None)
-            return result
-
-        if attri_type == 'ampacc':
-            result = ComplexAttributes.amplitude_acceleration(x, darray, preview=None)
-            return result
-        
-        if attri_type == 'inband':
-            result = ComplexAttributes.instantaneous_bandwidth(x, darray, preview=None)
-            return result
-
-        if attri_type == 'domfreq':
-            result = ComplexAttributes.dominant_frequency(x, darray, sample_rate=4, preview=None)
-            return result
-
-        if attri_type == 'apolar':
-            result = ComplexAttributes.apparent_polarity(x, darray, preview=None)
-            return result
-
-        if attri_type == 'resamp':
-            result = ComplexAttributes.response_amplitude(x, darray, preview=None)
-            return result
-
-        if attri_type == 'resfreq':
-            result = ComplexAttributes.response_frequency(x, darray, sample_rate=4, preview=None)
-            return result
-
-        if attri_type == 'resphase':
-            result = ComplexAttributes.response_phase(x, darray, preview=None)
-            return result
-
-        
-    '''
-    Main Program
-    
-    '''
     ori_image = data.copy()
-    darray = data
 
-    #apply attribute
-    x, darray, noise_red = makeDask(darray, kernel=kernel, 
+    # (H, W, 1) → (1, H, W) for the attribute pipeline
+    darray = np.squeeze(data)
+    darray = darray[np.newaxis, ...]
+
+    x, darray, noise_red = makeDask(darray, kernel=kernel,
                                     attri_type=attri_type, noise=noise)
     darray = darray.rechunk('auto')
-    result = compute(x, darray, attri_type=attri_type)
+    result  = compute(x, darray, attri_type=attri_type)
 
-    #extract mask
-    attr = result.T #convert dask array attribute to numpy array
-    
-    #return result
+    noise_red = noise_red.compute() if hasattr(noise_red, 'compute') else noise_red
+
+    # (1, H, W) → (H, W, 1) to match input convention
+    attr      = np.moveaxis(result.compute(), 0, -1)
+    noise_red = np.moveaxis(noise_red,        0, -1)
+
+    # # Normalise attr to [0, 1] so vmax is always 1 regardless of attribute type
+    # attr_min, attr_max = attr.min(), attr.max()
+    # if attr_max > attr_min:                      # avoid divide-by-zero on flat arrays
+    #     attr = (attr - attr_min) / (attr_max - attr_min)
+
     return ori_image, noise_red, attr
