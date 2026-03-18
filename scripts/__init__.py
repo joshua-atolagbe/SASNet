@@ -1,4 +1,4 @@
-from scripts.main_strong import main, display_results
+# from scripts.main_strong import main, display_results
 from model import UNetEfficientNet
 from data import SaltDataset
 from engine import train_model
