@@ -1,4 +1,4 @@
-<h2>Attention-based Neural Network for Deep Salt Segmentation from Weakly Annotated Seismic Data (Submitted to Computers & Geosciences)</h2>
+<h2>Attention-based Neural Network for Deep Salt Segmentation from Weakly Annotated Seismic Data (Submitted to Journal of Applied Geophysics)</h2>
 
 <h4>By: Joshua Atolagbe & Ardiansyah Koeshidayatullah (College of Petroleum & Geosciences, King Fahd University of Petroleum & Minerals)</h1>
 
@@ -36,7 +36,7 @@ python train.py \
 ```text
 @ARTICLE{10909446,
   author={Atolagbe, Joshua and Koeshidayatullah, Ardiansyah},
-  journal={Computers & Geosciences}, 
+  journal={Journal of Applied Geophysics}, 
   title={Attention-based Neural Network for Deep Salt Segmentation from Weakly Annotated Seismic Data}, 
   year={2025},
   volume={},
