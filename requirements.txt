@@ -9,3 +9,9 @@ torch
 matplotlib
 numpngw
 scikit-learn
+plotly
+dash
+dash-bootstrap-components
+segyio
+dask==2024.6.0
+numpngw
