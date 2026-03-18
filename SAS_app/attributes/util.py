@@ -5,6 +5,9 @@ Utilities for working with seismic and computing volume attributes.
 @author: Braden Fitz-Gerald
 @email: braden.fitzgerald@gmail.com
 
+modified from original code by: 
+    - Joshua Atolagbe (atolagbejoshua2@gmail.com)
+
 """
 
 # Import Libraries
@@ -59,6 +62,15 @@ def compute_chunk_size(shape, byte_size, kernel=None, preview=None):
     kki = i_s[(modi >= ki) | (modi == 0)]
     kkj = j_s[(modj >= kj) | (modj == 0)]
     kkk = k_s[(modk >= kk) | (modk == 0)]
+
+    # Fallback: if valid chunk candidates are empty (small image), use the
+    # full dimension size so dask still gets a valid chunk
+    if len(kki) == 0:
+        kki = np.array([shape[0]])
+    if len(kkj) == 0:
+        kkj = np.array([shape[1]])
+    if len(kkk) == 0:
+        kkk = np.array([shape[2]])
     
     # Compute Machine Specific information
     mem = psutil.virtual_memory().available
@@ -72,6 +84,10 @@ def compute_chunk_size(shape, byte_size, kernel=None, preview=None):
         Mij = kki * kkj.reshape(-1,1) * shape[2]
         Mij[Mij > M] = -1
         Mij = Mij.diagonal()
+
+        # If all combinations exceeded memory limit, fall back to full shape
+        if Mij.max() < 0:
+            Mij[...] = 1
 
         chunks = [kki[Mij.argmax()], kkj[Mij.argmax()], shape[2]]
     
@@ -125,22 +141,31 @@ def trim_dask_array(in_data, kernel):
     """
     Description
     -----------
-    Trim resuling Dask Array given a specified kernel size
-    
+    Trim resulting Dask Array given a specified kernel size.
+
+    Uses explicit edge slicing instead of da.overlap.trim_internal.
+    trim_internal is a no-op on single-chunk arrays (it only removes cells
+    at interior chunk boundaries), which causes shape bloat whenever the
+    entire array fits in one chunk — the common case for 2-D seismic slices
+    shaped (1, H, W).  Direct slicing always trims correctly regardless of
+    chunk count.
+
     Parameters
     ----------
     in_data : Dask Array
     kernel : tuple (len 3), operator size
-    
+
     Returns
     -------
     out : Dask Array
     """
-    
-    # Compute half windows and assign to dict
-    hw = tuple(np.array(kernel) // 2)    
-    axes = {0 : hw[0], 1 : hw[1], 2: hw[2]}    
-    return(da.overlap.trim_internal(in_data, axes=axes))
+
+    hw = tuple(np.array(kernel) // 2)
+    slices = tuple(
+        slice(hw[i], in_data.shape[i] - hw[i]) if hw[i] > 0 else slice(None)
+        for i in range(len(hw))
+    )
+    return in_data[slices]
     
     
 

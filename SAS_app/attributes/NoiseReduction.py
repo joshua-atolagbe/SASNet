@@ -5,6 +5,9 @@ Noise Reduction attributes for Seismic Data
 @author: Braden Fitz-Gerald
 @email: braden.fitzgerald@gmail.com
 
+modified from original code by: 
+    - Joshua Atolagbe (atolagbejoshua2@gmail.com)
+
 """
 
 # Import Libraries

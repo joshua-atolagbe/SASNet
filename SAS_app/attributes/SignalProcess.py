@@ -115,7 +115,7 @@ class SignalProcess():
                                    axis=axes[0], dtype=darray.dtype)
         result2 = result1.map_blocks(ndi.correlate1d, weights=[0.178947,0.642105,0.178947], 
                                      axis=axes[1], dtype=darray.dtype)
-        result = util.trim_dask_array(result0, kernel)
+        result = util.trim_dask_array(result2, kernel)
         
         return(result)
         
@@ -186,7 +186,7 @@ class SignalProcess():
             
             return(out.reshape(chunk.shape))
         
-        darray, chunks_init = self.create_array(darray, preview=preview)        
+        darray, chunks_init = self.create_array(darray, None, preview=preview)        
         hist, bins = da.histogram(darray, bins=np.linspace(darray.min(), darray.max(), 
                                                            256, dtype=darray.dtype))
         cdf = hist.cumsum(axis=-1)
@@ -221,7 +221,7 @@ class SignalProcess():
         result : Dask Array
         """
         
-        darray, chunks_init = self.create_array(darray, preview=preview)        
+        darray, chunks_init = self.create_array(darray, None, preview=preview)        
         z_ind = da.ones(darray.shape, chunks=darray.chunks).cumsum(axis=-1)
         gain = (1 + z_ind) ** gain_val
         
@@ -255,7 +255,7 @@ class SignalProcess():
         result : Dask Array
         """
         
-        darray, chunks_init = self.create_array(darray, preview=preview)
+        darray, chunks_init = self.create_array(darray, None, preview=preview)
         result = da.clip(darray, min_val, max_val)
         
         return(result)
@@ -294,8 +294,7 @@ class SignalProcess():
         darray, chunks_init = self.create_array(darray, kernel, preview=preview)
         result = darray.map_blocks(operation, kernel=kernel, dtype=darray.dtype, chunks=darray.chunks)
         result = util.trim_dask_array(result, kernel)
-        result[da.isnan(result)] = 0 
-        
+        result = da.where(da.isnan(result), 0.0, result)
         return(result)
         
         
@@ -326,7 +325,7 @@ class SignalProcess():
         rms = self.rms(darray, kernel)
         rms_max = rms.max()
         result = darray * (1.5 - (rms / rms_max))
-        result[da.isnan(result)] = 0 
+        result = da.where(da.isnan(result), 0.0, result)
         
         return(result)
         
@@ -358,7 +357,7 @@ class SignalProcess():
         darray, chunks_init = self.create_array(darray, kernel, preview=preview)
         result = darray.map_blocks(ndi.gaussian_gradient_magnitude, sigma=sigmas, dtype=darray.dtype)
         result = util.trim_dask_array(result, kernel)
-        result[da.isnan(result)] = 0
+        result = da.where(da.isnan(result), 0.0, result)
         
         return(result)
         
@@ -395,7 +394,7 @@ class SignalProcess():
         
         darray, chunks_init = self.create_array(darray, kernel, preview=preview)
         result = darray.map_blocks(operation, kernel=kernel, dtype=darray.dtype, chunks=chunks_init)
-        result[da.isnan(result)] = 0 
+        result = da.where(da.isnan(result), 0.0, result)
         
         return(result)
         
@@ -429,6 +428,6 @@ class SignalProcess():
         analytical_trace = darray.map_blocks(signal.hilbert, dtype=darray.dtype)
         result = analytical_trace.real * da.cos(phi) - analytical_trace.imag * da.sin(phi)
         result = util.trim_dask_array(result, kernel)
-        result[da.isnan(result)] = 0
+        result = da.where(da.isnan(result), 0.0, result)
         
         return(result)
